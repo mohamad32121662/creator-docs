@@ -1,23 +1,508 @@
-name: RtlTextSupport
-type: enum
-summary: ''
-description: ''
-code_samples: []
-tags: []
-deprecation_message: ''
-items:
-  - name: Default
-    value: 0
-    summary: ''
-    tags: []
-    deprecation_message: ''
-  - name: Disabled
-    value: 1
-    summary: ''
-    tags: []
-    deprecation_message: ''
-  - name: Enabled
-    value: 2
-    summary: ''
-    tags: []
-    deprecation_message: ''
+-- سكربت شامل: مدينة + أبعاد + بوابات + أعداء + مهام + أصوات + UI
+-- ضع السكربت في ServerScriptService
+
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+
+-- === إعداد مجلدات رئيسية ===
+local cityFolder = Workspace:FindFirstChild("InterdimensionalCity") or Instance.new("Folder", Workspace)
+cityFolder.Name = "InterdimensionalCity"
+local gatesFolder = Workspace:FindFirstChild("Portals") or Instance.new("Folder", Workspace)
+gatesFolder.Name = "Portals"
+local dimensionsFolder = Workspace:FindFirstChild("Dimensions") or Instance.new("Folder", Workspace)
+dimensionsFolder.Name = "Dimensions"
+local enemiesFolder = Workspace:FindFirstChild("Enemies") or Instance.new("Folder", Workspace)
+enemiesFolder.Name = "Enemies"
+
+-- === دالة إنشاء أجزاء بجماليات وإضاءة ===
+local function createPart(props)
+    local part = Instance.new("Part")
+    for k,v in pairs(props) do
+        if k ~= "Parent" and k ~= "MaterialEffect" and k ~= "ColorEffect" and k ~= "Particle" then
+            part[k]=v
+        end
+    end
+    part.Anchored = true
+    part.Parent = props.Parent or cityFolder
+    if props.MaterialEffect then
+        part.Material = props.MaterialEffect
+    end
+    if props.ColorEffect then
+        local pointLight = Instance.new("PointLight", part)
+        pointLight.Color = props.Color
+        pointLight.Brightness = 2
+        pointLight.Range = 15
+    end
+    if props.Particle then
+        local emitter = Instance.new("ParticleEmitter", part)
+        emitter.Color = ColorSequence.new(props.Color)
+        emitter.Rate = 8
+        emitter.Lifetime = NumberRange.new(1.2,2.2)
+        emitter.Size = NumberSequence.new(1)
+        emitter.Speed = NumberRange.new(3,5)
+        emitter.Texture = "rbxassetid://4844366222"
+    end
+    return part
+end
+
+-- === إنشاء المدينة الرئيسية (مثل السكربت السابق) ===
+if not cityFolder:FindFirstChild("Ground") then
+    createPart{
+        Name="Ground",
+        Size=Vector3.new(240,1,240),
+        Position=Vector3.new(0,0,0),
+        Color=Color3.fromRGB(80, 85, 95),
+        Material=Enum.Material.SmoothPlastic,
+        Parent=cityFolder
+    }
+    for i=-2,2 do
+        createPart{
+            Name="Street"..i,
+            Size=Vector3.new(240,0.2,8),
+            Position=Vector3.new(0,0.1,i*40),
+            Color=Color3.fromRGB(35,35,35),
+            Material=Enum.Material.Concrete,
+            Parent=cityFolder
+        }
+        createPart{
+            Name="CrossStreet"..i,
+            Size=Vector3.new(8,0.2,240),
+            Position=Vector3.new(i*40,0.1,0),
+            Color=Color3.fromRGB(35,35,35),
+            Material=Enum.Material.Concrete,
+            Parent=cityFolder
+        }
+    end
+
+    -- مناطق مميزة
+    local cityLocations = {
+        {name="Cafe", pos=Vector3.new(35,2,60), color=Color3.fromRGB(196, 143, 104)},
+        {name="Shop", pos=Vector3.new(-55,2,-45), color=Color3.fromRGB(82, 157, 174)},
+        {name="Office", pos=Vector3.new(55,2,45), color=Color3.fromRGB(128, 128, 180)},
+        {name="Park", pos=Vector3.new(-60,2,60), color=Color3.fromRGB(68, 159, 72)},
+        {name="AbandonedHouse", pos=Vector3.new(70,2,-60), color=Color3.fromRGB(90, 80, 60)},
+        {name="RestZone", pos=Vector3.new(0,2,100), color=Color3.fromRGB(195, 255, 210)},
+    }
+    for _,loc in ipairs(cityLocations) do
+        local main = createPart{
+            Name=loc.name,
+            Size=Vector3.new(18,5,18),
+            Position=loc.pos,
+            Color=loc.color,
+            Material=Enum.Material.WoodPlanks,
+            MaterialEffect=Enum.Material.WoodPlanks,
+            Parent=cityFolder,
+            ColorEffect=true
+        }
+        createPart{
+            Name=loc.name.."Sign",
+            Size=Vector3.new(8,2,0.4),
+            Position=loc.pos + Vector3.new(0,4,9),
+            Color=Color3.fromRGB(255,255,255),
+            Material=Enum.Material.Neon,
+            Parent=cityFolder
+        }
+    end
+    -- أشجار وحدائق
+    for i=1,8 do
+        local pos = Vector3.new(math.random(-100,100),1,math.random(-100,100))
+        createPart{
+            Name="Tree"..i,
+            Size=Vector3.new(2,10,2),
+            Position=pos + Vector3.new(0,5,0),
+            Color=Color3.fromRGB(99, 67, 33),
+            Material=Enum.Material.Wood,
+            Parent=cityFolder
+        }
+        createPart{
+            Name="Leaves"..i,
+            Size=Vector3.new(8,8,8),
+            Position=pos + Vector3.new(0,14,0),
+            Color=Color3.fromRGB(34, 173, 50),
+            Material=Enum.Material.Grass,
+            Parent=cityFolder
+        }
+    end
+    -- استراحات
+    for i=1,2 do
+        local rest = createPart{
+            Name="RestArea"..i,
+            Size=Vector3.new(14,1,14),
+            Position=Vector3.new(math.random(-90,90),1,math.random(-90,90)),
+            Color=Color3.fromRGB(255, 230, 180),
+            Material=Enum.Material.Grass,
+            Parent=cityFolder,
+            ColorEffect=true
+        }
+        createPart{
+            Name="Bench"..i,
+            Size=Vector3.new(6,0.6,2),
+            Position=rest.Position + Vector3.new(0,1,0),
+            Color=Color3.fromRGB(143, 97, 51),
+            Material=Enum.Material.Wood,
+            Parent=cityFolder
+        }
+    end
+end
+
+-- === إعداد الإضاءة والمؤثرات الجمالية ===
+if not Lighting:FindFirstChildOfClass("BloomEffect") then
+    Lighting.Brightness = 2.2
+    Lighting.OutdoorAmbient = Color3.fromRGB(80,80,100)
+    Lighting.Ambient = Color3.fromRGB(60,60,80)
+    Lighting.ClockTime = 20
+    Lighting.FogColor = Color3.fromRGB(46, 74, 106)
+    Lighting.FogEnd = 180
+    Lighting.FogStart = 90
+    local bloom = Instance.new("BloomEffect", Lighting)
+    bloom.Intensity = 0.8
+    bloom.Size = 72
+    local cc = Instance.new("ColorCorrectionEffect", Lighting)
+    cc.TintColor = Color3.fromRGB(220,230,255)
+    cc.Brightness = 0.05
+    cc.Contrast = 0.13
+end
+
+-- === إعداد الأبعاد + تصميم البعد الرقمي بالتفصيل ===
+local dimensionsInfo = {
+    {name="InvertedGravity", pos=Vector3.new(185,10,0), color=Color3.fromRGB(0, 119, 255)},
+    {name="GiantFlora", pos=Vector3.new(-185,10,0), color=Color3.fromRGB(34, 177, 76)},
+    {name="Pixelated", pos=Vector3.new(0,10,185), color=Color3.fromRGB(255, 40, 200)}, -- البعد الرقمي
+    {name="TimeWarp", pos=Vector3.new(0,10,-185), color=Color3.fromRGB(255, 191, 0)},
+}
+for _,dim in ipairs(dimensionsInfo) do
+    if not dimensionsFolder:FindFirstChild(dim.name) then
+        local spawn = Instance.new("Part")
+        spawn.Name = dim.name
+        spawn.Size = Vector3.new(8,2,8)
+        spawn.Position = dim.pos
+        spawn.Anchored = true
+        spawn.Color = dim.color
+        spawn.Material = Enum.Material.Neon
+        spawn.Parent = dimensionsFolder
+        local light = Instance.new("PointLight", spawn)
+        light.Color = dim.color
+        light.Brightness = 3
+        light.Range = 20
+        local emitter = Instance.new("ParticleEmitter", spawn)
+        emitter.Color = ColorSequence.new(dim.color)
+        emitter.Rate = 10
+        emitter.Lifetime = NumberRange.new(2,3)
+        emitter.Size = NumberSequence.new(2)
+        emitter.Speed = NumberRange.new(3,7)
+        emitter.Texture = "rbxassetid://4844366222"
+        -- تصميم البعد الرقمي
+        if dim.name == "Pixelated" then
+            for px=1,24 do
+                local pBlock = Instance.new("Part")
+                pBlock.Size = Vector3.new(8,math.random(2,8),8)
+                pBlock.Anchored = true
+                pBlock.Position = dim.pos + Vector3.new(math.random(-30,30),pBlock.Size.Y/2,math.random(-30,30))
+                pBlock.Parent = dimensionsFolder
+                pBlock.Color = Color3.fromHSV(math.random(),1,1)
+                pBlock.Material = Enum.Material.Neon
+                if math.random() > 0.7 then
+                    local pl = Instance.new("PointLight", pBlock)
+                    pl.Color = pBlock.Color
+                    pl.Brightness = 6
+                end
+                if math.random() > 0.5 then
+                    local emitterP = Instance.new("ParticleEmitter", pBlock)
+                    emitterP.Texture = "rbxassetid://4844366222"
+                    emitterP.Color = ColorSequence.new(pBlock.Color)
+                    emitterP.Rate = 12
+                    emitterP.Lifetime = NumberRange.new(0.8,1.6)
+                    emitterP.Size = NumberSequence.new(0.7)
+                end
+            end
+        end
+    end
+end
+
+-- === إنشاء البوابات مع نظام الانتقال والمؤثرات الصوتية ===
+local portalSoundId = "rbxassetid://9118828560" -- أضف ID صوت الانتقال الخاص بك هنا
+for i,portal in ipairs(dimensionsInfo) do
+    if not gatesFolder:FindFirstChild(portal.name.."Portal") then
+        local p = createPart{
+            Name=portal.name.."Portal",
+            Size=Vector3.new(6,12,1.5),
+            Position=portal.pos/2,
+            Color=portal.color,
+            Material=Enum.Material.Neon,
+            Parent=gatesFolder,
+            ColorEffect=true,
+            Particle=true
+        }
+        p.CanCollide = false
+        -- بوابة دائرية
+        local ring = Instance.new("Part")
+        ring.Shape = Enum.PartType.Cylinder
+        ring.Size = Vector3.new(1.5,8,8)
+        ring.Position = p.Position + Vector3.new(0,6,0)
+        ring.Orientation = Vector3.new(0,0,90)
+        ring.Anchored = true
+        ring.CanCollide = false
+        ring.Color = portal.color
+        ring.Material = Enum.Material.ForceField
+        ring.Parent = gatesFolder
+        local ringLight = Instance.new("PointLight", ring)
+        ringLight.Color = portal.color
+        ringLight.Brightness = 4
+        ringLight.Range = 18
+        local dimValue = Instance.new("StringValue", p)
+        dimValue.Name = "Dimension"
+        dimValue.Value = portal.name
+        -- الانتقال + صوت المؤثر
+        p.Touched:Connect(function(hit)
+            local player = Players:GetPlayerFromCharacter(hit.Parent)
+            if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                if not player.Character:FindFirstChild("TeleportCooldown") then
+                    local cooldown = Instance.new("BoolValue")
+                    cooldown.Name = "TeleportCooldown"
+                    cooldown.Parent = player.Character
+                    -- مؤثر صوتي
+                    local sound = Instance.new("Sound", SoundService)
+                    sound.SoundId = portalSoundId
+                    sound.Volume = 1
+                    sound:Play()
+                    game:GetService("Debris"):AddItem(sound,2)
+                    local dimensionName = p:FindFirstChild("Dimension")
+                    if dimensionName then
+                        local targetFolder = Workspace:FindFirstChild("Dimensions")
+                        if targetFolder then
+                            local targetPart = targetFolder:FindFirstChild(dimensionName.Value)
+                            if targetPart and targetPart:IsA("BasePart") then
+                                local char = player.Character
+                                if char:FindFirstChild("HumanoidRootPart") then
+                                    local hrp = char.HumanoidRootPart
+                                    local fx = Instance.new("ParticleEmitter", hrp)
+                                    fx.Texture = "rbxassetid://4844366222"
+                                    fx.Speed = NumberRange.new(10,15)
+                                    fx.Lifetime = NumberRange.new(0.5,0.7)
+                                    fx.Size = NumberSequence.new(2)
+                                    fx.Rate = 80
+                                    fx.Color = ColorSequence.new(portal.color)
+                                    game:GetService("Debris"):AddItem(fx, 1)
+                                end
+                                player.Character:SetPrimaryPartCFrame(CFrame.new(targetPart.Position + Vector3.new(0,5,0)))
+                            end
+                        end
+                    end
+                    wait(3)
+                    cooldown:Destroy()
+                end
+            end
+        end)
+    end
+end
+
+-- === موسيقى وخلفيات صوتية ===
+local cityMusicId = "rbxassetid://1846701400"      -- عدل بحسب الصوت الذي رفعته
+local pixelMusicId = "rbxassetid://1846725217"     -- موسيقى البعد الرقمي
+if not SoundService:FindFirstChild("CityMusic") then
+    local cityMusic = Instance.new("Sound", SoundService)
+    cityMusic.Name = "CityMusic"
+    cityMusic.SoundId = cityMusicId
+    cityMusic.Volume = 0.4
+    cityMusic.Looped = true
+    cityMusic:Play()
+end
+if not SoundService:FindFirstChild("AmbientNature") then
+    local ambient = Instance.new("Sound", SoundService)
+    ambient.Name = "AmbientNature"
+    ambient.SoundId = "rbxassetid://9124231629"
+    ambient.Volume = 0.25
+    ambient.Looped = true
+    ambient:Play()
+end
+
+-- عند دخول البعد الرقمي: تشغيل موسيقى رقمية
+local portals = gatesFolder
+if portals then
+    for _,p in ipairs(portals:GetChildren()) do
+        if p:IsA("BasePart") and p:FindFirstChild("Dimension") then
+            p.Touched:Connect(function(hit)
+                local player = Players:GetPlayerFromCharacter(hit.Parent)
+                if player and p.Dimension.Value == "Pixelated" then
+                    if not SoundService:FindFirstChild("PixelMusic") then
+                        local pxMusic = Instance.new("Sound", SoundService)
+                        pxMusic.Name = "PixelMusic"
+                        pxMusic.SoundId = pixelMusicId
+                        pxMusic.Volume = 0.55
+                        pxMusic.Looped = true
+                        pxMusic:Play()
+                    end
+                    -- أوقف موسيقى المدينة
+                    if SoundService:FindFirstChild("CityMusic") then
+                        SoundService.CityMusic:Stop()
+                    end
+                end
+            end)
+        end
+    end
+end
+
+-- === نظام مهام للاعبين (تحديث مستمر) ===
+local taskEvent = Instance.new("RemoteEvent", ReplicatedStorage)
+taskEvent.Name = "TaskUpdate"
+
+local sampleTasks = {
+    {"استكشف المدينة!", false},
+    {"ادخل البعد الرقمي", false},
+    {"اهزم عدو رقمي واحد", false},
+    {"اجمع 3 عناصر رقمية", false},
+}
+local playerTasks = {}
+
+-- تحديث واجهة المهام
+local function updateTasksForPlayer(player)
+    local tasks = playerTasks[player] or sampleTasks
+    taskEvent:FireClient(player, tasks)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    playerTasks[player] = {
+        {"استكشف المدينة!", true},
+        {"ادخل البعد الرقمي", false},
+        {"اهزم عدو رقمي واحد", false},
+        {"اجمع 3 عناصر رقمية", false},
+    }
+    updateTasksForPlayer(player)
+end)
+
+-- عند دخول البعد الرقمي حدث المهمة الثانية
+for _,p in ipairs(gatesFolder:GetChildren()) do
+    if p:IsA("BasePart") and p:FindFirstChild("Dimension") and p.Dimension.Value=="Pixelated" then
+        p.Touched:Connect(function(hit)
+            local player = Players:GetPlayerFromCharacter(hit.Parent)
+            if player and playerTasks[player] then
+                playerTasks[player][2][2]=true
+                updateTasksForPlayer(player)
+            end
+        end)
+    end
+end
+
+-- === سكربت أعداء أذكياء في البعد الرقمي ===
+local function spawnDigitalEnemy(pos)
+    local enemy = Instance.new("Part")
+    enemy.Name = "DigitalVirus"
+    enemy.Size = Vector3.new(3,3,3)
+    enemy.Position = pos
+    enemy.Anchored = false
+    enemy.Color = Color3.fromRGB(255,0,200)
+    enemy.Material = Enum.Material.Neon
+    enemy.Parent = enemiesFolder
+    local hum = Instance.new("Humanoid", enemy)
+    hum.Health = 40
+    -- مؤثرات
+    local pl = Instance.new("PointLight", enemy)
+    pl.Color = Color3.fromRGB(255,0,200)
+    pl.Brightness = 8
+    local emitter = Instance.new("ParticleEmitter", enemy)
+    emitter.Color = ColorSequence.new(Color3.fromRGB(255,0,200))
+    emitter.Rate = 12
+    emitter.Lifetime = NumberRange.new(0.5,1.1)
+    emitter.Size = NumberSequence.new(1.25)
+    emitter.Texture = "rbxassetid://4844366222"
+    -- ذكاء اصطناعي بسيط: مطاردة أقرب لاعب في البعد الرقمي
+    local RunService = game:GetService("RunService")
+    local chasing = true
+    local function findNearestPlayer()
+        local nearest, minDist = nil, math.huge
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                if (player.Character.HumanoidRootPart.Position - pos).magnitude < 60 then
+                    local dist = (player.Character.HumanoidRootPart.Position - enemy.Position).magnitude
+                    if dist < minDist then
+                        nearest = player.Character
+                        minDist = dist
+                    end
+                end
+            end
+        end
+        return nearest
+    end
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        if not chasing then conn:Disconnect() end
+        local target = findNearestPlayer()
+        if target then
+            local dir = (target.HumanoidRootPart.Position - enemy.Position).unit
+            enemy.Velocity = dir * 30
+        else
+            enemy.Velocity = Vector3.new()
+        end
+    end)
+    -- عند موت العدو: تحديث المهام
+    hum.Died:Connect(function()
+        chasing = false
+        for _,player in pairs(Players:GetPlayers()) do
+            if player.Character and (player.Character.HumanoidRootPart.Position - enemy.Position).magnitude < 50 and playerTasks[player] then
+                playerTasks[player][3][2]=true
+                updateTasksForPlayer(player)
+            end
+        end
+    end)
+end
+
+-- توليد أعداء تلقائياً في البعد الرقمي
+local pixelSpawn = dimensionsFolder:FindFirstChild("Pixelated")
+if pixelSpawn then
+    for i=1,3 do
+        spawnDigitalEnemy(pixelSpawn.Position + Vector3.new(math.random(-15,15),3,math.random(-15,15)))
+    end
+end
+
+-- === واجهة المستخدم للمهام (UI) ===
+-- سكربت Client يجب وضعه في StarterPlayerScripts:
+local taskGuiScript = [[
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local TaskEvent = ReplicatedStorage:WaitForChild("TaskUpdate")
+
+local screenGui = Instance.new("ScreenGui", player.PlayerGui)
+screenGui.Name = "TaskGui"
+
+for i=1,4 do
+    local label = Instance.new("TextLabel", screenGui)
+    label.Name = "Task"..i
+    label.Size = UDim2.new(0,270,0,30)
+    label.Position = UDim2.new(0,10,0,10+35*(i-1))
+    label.Text = ""
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 20
+    label.BackgroundTransparency = 0.4
+    label.BackgroundColor3 = Color3.fromRGB(30,30,35)
+end
+
+TaskEvent.OnClientEvent:Connect(function(taskData)
+    for i, task in ipairs(taskData) do
+        local label = screenGui:FindFirstChild("Task"..i)
+        if label then
+            label.Text = task[1] .. (task[2] and " ✔️" or " ⏳")
+        end
+    end
+end)
+]]
+
+-- تلقائياً يضع السكربت في StarterPlayerScripts
+local function insertTaskGui()
+    local starter = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
+    if not starter:FindFirstChild("TaskGuiClient") then
+        local s = Instance.new("LocalScript")
+        s.Name = "TaskGuiClient"
+        s.Source = taskGuiScript
+        s.Parent = starter
+    end
+end
+insertTaskGui()
+
+print("✅ كل الأنظمة تعمل: مدينة وأبعاد وبوابات وأعداء أذكياء ومهام وصوتيات وواجهة مستخدم!")
